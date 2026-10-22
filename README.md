@@ -14,13 +14,13 @@ npm test
 npm run dev
 ```
 
-Adapter memakai kontrak REST yang didokumentasikan di `XBorgLabs/propr-docs`: `GET /health`, `GET /users/me`, `GET /challenge-attempts`, `GET /accounts/{accountId}`, dan `POST /accounts/{accountId}/orders` dengan ULID order market. Dokumentasi resmi tidak menyediakan endpoint candle/klines, sehingga `fetchCandles()` fail-closed dan tidak mengarang endpoint.
+Adapter memakai kontrak REST yang didokumentasikan di `XBorgLabs/propr-docs`: health, user, challenge, account, positions, dan orders. Untuk `XYZ100-USDC`, adapter mengirim `asset: xyz:XYZ100`, `base: XYZ100`, `quote: USDC`. Karena Propr tidak menyediakan candle endpoint, pipeline mengambil candle `1m` dari Hyperliquid Info API publik (`candleSnapshot`) lalu menghitung RSI lokal. Polling tetap 1 detik; Hyperliquid tidak mendukung candle `1s`. Detail lokal ada di `.claude/skills/docs-propr/SKILL.md`.
 
 ## Kontrak adapter
 
 `fetchCandles(symbol, interval, limit)` mengembalikan candle OHLC numerik terbaru.
 
-`submit_trade({ side, symbol, size })` memetakan `long` ke order `buy` + `positionSide: long` dan `short` ke `sell` + `positionSide: short`, lalu menyegarkan snapshot akun. `DRY_RUN=true` default; mode live hanya mengirim order saat `DRY_RUN=false`.
+`submit_trade({ side, symbol, size })` memetakan `long` ke order `buy` + `positionSide: long` dan `short` ke `sell` + `positionSide: short`, memakai `asset` HIP-3 yang benar, serta menolak response order kosong/rejected. Exit dikelola oleh threshold RSI: LONG keluar pada RSI <=10 atau >=60; SHORT keluar pada RSI <=40 atau >=90. `DRY_RUN=true` default; mode live hanya mengirim order saat `DRY_RUN=false`.
 
 ## Operasional
 

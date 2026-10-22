@@ -7,7 +7,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/main.js",
     "check": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx src/self-check.ts"
+    "test": "tsx src/self-check.ts",
+    "test:one-shot": "tsx src/one-shot-test.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.7",

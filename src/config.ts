@@ -9,13 +9,20 @@ function positiveInt(name: string, fallback: number): number {
 export const config = {
   accountsPath: new URL("../accounts.json", import.meta.url),
   apiUrl: process.env.PROPR_API_URL ?? "https://api.propr.xyz/v1",
-  accountId: process.env.PROPR_ACCOUNT_ID,
-  symbol: process.env.PROPR_SYMBOL ?? "BTC",
-  candleInterval: "15m",
-  loopMs: 900_000,
-  maxDailyLoss: 150, // 3% of the $5,000 initial balance
+  accountIds: [...new Set((process.env.PROPR_ACCOUNT_IDS ?? process.env.PROPR_ACCOUNT_ID ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean))],
+  symbol: process.env.PROPR_SYMBOL ?? process.env.SYMBOL ?? "XYZ100-USDC",
+  candleInterval: process.env.CANDLE_INTERVAL ?? "1m",
+  loopMs: positiveInt("LOOP_MS", 1_000),
+  maxDailyLoss: 100, // Maximum daily loss; warning threshold is 50
   profitLimit: 500,
   opencodeCommand: process.env.OPENCODE_COMMAND ?? "opencode",
-  dryRun: true,
+  dryRun: (process.env.DRY_RUN ?? "true").trim().toLowerCase() !== "false",
+  leverage: positiveInt("LEVERAGE", 4),
+  marginFraction: Number(process.env.MARGIN_FRACTION ?? 0.5),
+  targetPnl: positiveInt("TARGET_PNL", 25),
+  stopPnl: positiveInt("STOP_PNL", 25),
   orderSize: positiveInt("ORDER_SIZE", 1),
 };

@@ -1,4 +1,4 @@
-import type { Classification } from "./types.js";
+import type { Classification, Position } from "./types.js";
 
 export interface OscillatorDecision {
   classification: Classification;
@@ -32,9 +32,17 @@ export function calculateRSI(closes: number[], period = 14): number {
   return 100 - (100 / (1 + (averageGain / averageLoss)));
 }
 
-export function evaluateOscillatorState(currentRsi: number): OscillatorDecision {
+export function evaluateOscillatorState(currentRsi: number, currentPosition: Position): OscillatorDecision {
   if (!Number.isFinite(currentRsi)) throw new Error("RSI must be a finite number");
-  if (currentRsi >= 80) return { classification: "DOWN" };
-  if (currentRsi <= 15) return { classification: "UP" };
+  if (currentPosition === "NONE") {
+    if (currentRsi < 30) return { classification: "UP" };
+    if (currentRsi > 70) return { classification: "DOWN" };
+  }
+  if (currentPosition === "LONG" && (currentRsi >= 60 || currentRsi <= 10)) {
+    return { classification: "CLOSE" };
+  }
+  if (currentPosition === "SHORT" && (currentRsi <= 40 || currentRsi >= 90)) {
+    return { classification: "CLOSE" };
+  }
   return { classification: "HOLD" };
 }

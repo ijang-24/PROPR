@@ -1,12 +1,12 @@
 import { spawn } from "node:child_process";
 import type { Candle, Classification } from "./types.js";
 
-const allowed = new Set<Classification>(["UP", "DOWN", "HOLD"]);
+const allowed = new Set<Classification>(["UP", "DOWN", "CLOSE", "HOLD"]);
 
 export function classifyWithOpenCode(command: string, candles: Candle[]): Promise<Classification> {
   const prompt = [
     "Return ONLY one JSON object, with no markdown and no explanation.",
-    'The exact schema is {"classification":"UP"} or {"classification":"DOWN"} or {"classification":"HOLD"}.',
+    'The exact schema is {"classification":"UP"}, {"classification":"DOWN"}, {"classification":"CLOSE"}, or {"classification":"HOLD"}.',
     "Do not provide financial advice. Classify only the numeric OHLCV data below.",
     JSON.stringify(candles),
   ].join("\n");

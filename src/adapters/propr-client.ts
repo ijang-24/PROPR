@@ -1,5 +1,15 @@
 import { ulid } from "ulid";
-import type { AccountSnapshot, Candle, ProprClient, TradeRequest } from "../types.js";
+import { fetchHyperliquidCandles } from "./hyperliquid-market-data.js";
+import type {
+  AccountSnapshot,
+  Candle,
+  OneShotOrderResult,
+  OneShotShortRequest,
+  ProtectedTradeRequest,
+  ProprClient,
+  ProprPosition,
+  TradeRequest,
+} from "../types.js";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
@@ -13,8 +23,47 @@ interface AccountResponse {
   isolatedPositionMargin?: unknown;
 }
 
+interface ProprOrder {
+  orderId?: string;
+  intentId?: string;
+  positionId?: string | null;
+  status?: string;
+  type?: string;
+  asset?: string;
+  base?: string;
+  quantity?: string;
+}
+
 interface OrderResponse {
-  data?: unknown[];
+  data?: ProprOrder[];
+}
+
+interface MarginConfigResponse {
+  configId?: string;
+  asset?: string;
+  marginMode?: string;
+  leverage?: string | number;
+}
+
+interface PositionsResponse {
+  data?: ProprPosition[];
+}
+
+function proprAsset(symbol: string): { asset: string; base: string; marginAsset: string } {
+  const value = symbol.trim();
+  if (value.includes("/")) throw new Error(`Invalid Propr symbol: ${symbol}`);
+  if (value.toUpperCase() === "XYZ100-USDC") {
+    return { asset: "xyz:XYZ100", base: "XYZ100", marginAsset: "xyz:XYZ100" };
+  }
+  const [basePart, quote] = value.split("-");
+  if (!basePart) throw new Error(`Invalid Propr symbol: ${symbol}`);
+  if (quote && quote.toUpperCase() !== "USDC") throw new Error(`Unsupported Propr quote: ${quote}`);
+  const asset = basePart.includes(":") ? basePart : basePart.toUpperCase();
+  return {
+    asset,
+    base: basePart.includes(":") ? basePart.slice(basePart.indexOf(":") + 1) : basePart.toUpperCase(),
+    marginAsset: asset,
+  };
 }
 
 export class OfficialProprClient implements ProprClient {
@@ -103,30 +152,139 @@ export class OfficialProprClient implements ProprClient {
     return { balance, equity: balance + unrealizedPnl + isolatedMargin };
   }
 
-  async fetchCandles(_symbol: string, _interval: string, _limit: number): Promise<Candle[]> {
-    throw new Error("Propr official API documents no candle/klines endpoint; refusing to invent one");
+  async getPositions(symbol?: string): Promise<ProprPosition[]> {
+    const params: Record<string, string> = { limit: "100", offset: "0" };
+    if (symbol) params.asset = proprAsset(symbol).asset;
+    const response = await this.request<PositionsResponse>("GET", this.accountPath("/positions"), undefined, params);
+    return (response.data ?? []).filter((position) => Number(position.quantity) > 0);
+  }
+
+  async hasPendingOrders(symbol: string): Promise<boolean> {
+    const { base } = proprAsset(symbol);
+    for (const status of ["pending", "open"]) {
+      const response = await this.request<OrderResponse>("GET", this.accountPath("/orders"), undefined, {
+        base,
+        status,
+        limit: "20",
+        offset: "0",
+      });
+      if ((response.data?.length ?? 0) > 0) return true;
+    }
+    return false;
+  }
+
+  async setLeverage(symbol: string, leverage: number): Promise<void> {
+    if (!Number.isInteger(leverage) || leverage <= 0) throw new Error("Leverage must be a positive integer");
+    const { marginAsset } = proprAsset(symbol);
+    const config = await this.request<MarginConfigResponse>("GET", this.accountPath(`/margin-config/${encodeURIComponent(marginAsset)}`));
+    if (!config.configId) throw new Error(`No margin config found for ${marginAsset}`);
+    await this.request("PUT", this.accountPath(`/margin-config/${encodeURIComponent(config.configId)}`), {
+      exchange: "hyperliquid",
+      asset: marginAsset,
+      marginMode: config.marginMode === "isolated" ? "isolated" : "cross",
+      leverage,
+    });
+  }
+
+  async fetchCandles(symbol: string, interval: string, limit: number): Promise<Candle[]> {
+    return fetchHyperliquidCandles(symbol, interval, limit);
   }
 
   async submit_trade(request: TradeRequest): Promise<AccountSnapshot> {
     if (this.dryRun) return this.refreshAccountSnapshot();
-    const side = request.side === "long" ? "buy" : "sell";
-    const order = {
+
+    const positionSide = request.positionSide ?? request.side;
+    const side = request.closePosition
+      ? positionSide === "long" ? "sell" : "buy"
+      : request.side === "long" ? "buy" : "sell";
+    const { asset, base } = proprAsset(request.symbol);
+    const entry = {
       accountId: this.accountId,
       intentId: ulid(),
       exchange: "hyperliquid",
       type: "market",
       side,
-      positionSide: request.side,
+      positionSide,
       productType: "perp",
       timeInForce: "IOC",
-      asset: request.symbol,
-      base: request.symbol,
+      asset,
+      base,
       quote: "USDC",
       quantity: String(request.size),
-      reduceOnly: false,
-      closePosition: false,
+      reduceOnly: request.closePosition ?? false,
+      closePosition: request.closePosition ?? false,
     };
-    await this.request<OrderResponse>("POST", this.accountPath("/orders"), { orders: [order] });
+    const response = await this.request<OrderResponse>("POST", this.accountPath("/orders"), {
+      orders: [entry],
+    });
+    if (!response.data?.length) throw new Error("Propr accepted no orders");
+    const rejected = response.data.find((order) => order.status === "rejected");
+    if (rejected) throw new Error(`Propr rejected order ${rejected.intentId ?? "unknown"}`);
     return this.refreshAccountSnapshot();
+  }
+
+  async submitProtectedTrade(request: ProtectedTradeRequest): Promise<OneShotOrderResult[]> {
+    if (this.dryRun) throw new Error("Protected live trade requires DRY_RUN=false");
+    if (![request.quantity, request.entryPrice, request.takeProfitPrice, request.stopLossPrice].every(Number.isFinite)) {
+      throw new Error("Protected trade values must be finite");
+    }
+    const { asset, base } = proprAsset(request.symbol);
+    const positionSide = request.side;
+    const exchangeSide = request.side === "long" ? "buy" : "sell";
+    const closeSide = request.side === "long" ? "sell" : "buy";
+    const groupId = ulid();
+    const common = {
+      accountId: this.accountId,
+      exchange: "hyperliquid",
+      positionSide,
+      productType: "perp",
+      asset,
+      base,
+      quote: "USDC",
+      quantity: String(request.quantity),
+    };
+    const orders = [
+      {
+        ...common,
+        intentId: ulid(),
+        type: "market",
+        side: exchangeSide,
+        timeInForce: "IOC",
+        reduceOnly: false,
+        closePosition: false,
+      },
+      {
+        ...common,
+        intentId: ulid(),
+        type: request.side === "long" ? "take_profit_market" : "take_profit_market",
+        side: closeSide,
+        timeInForce: "GTC",
+        triggerPrice: String(request.takeProfitPrice),
+        reduceOnly: true,
+        closePosition: false,
+      },
+      {
+        ...common,
+        intentId: ulid(),
+        type: "stop_market",
+        side: closeSide,
+        timeInForce: "GTC",
+        triggerPrice: String(request.stopLossPrice),
+        reduceOnly: true,
+        closePosition: false,
+      },
+    ];
+    const response = await this.request<OrderResponse>("POST", this.accountPath("/orders"), {
+      orderGroupId: groupId,
+      orders,
+    });
+    if (!response.data?.length) throw new Error("Propr accepted no protected trade orders");
+    const rejected = response.data.find((order) => order.status === "rejected");
+    if (rejected) throw new Error(`Propr rejected protected trade order ${rejected.intentId ?? "unknown"}`);
+    return response.data.map(({ orderId, status, type }) => ({ orderId, status, type }));
+  }
+
+  async submitOneShotShort(request: OneShotShortRequest): Promise<OneShotOrderResult[]> {
+    return this.submitProtectedTrade({ ...request, side: "short" });
   }
 }
