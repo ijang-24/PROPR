@@ -1,7 +1,7 @@
 import { access, copyFile, mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { writeAccountSnapshot } from "./accounts.js";
+import { readAccounts, writeAccountSnapshot } from "./accounts.js";
 import { loadTradingAccounts } from "./account-registry.js";
 import { config } from "./config.js";
 import { fetchHyperliquidCandles } from "./adapters/hyperliquid-market-data.js";
@@ -110,9 +110,24 @@ async function ensureAccountState(accountId: string): Promise<URL> {
 
 async function enforceRiskLock(accountId: string, accountsPath: URL): Promise<boolean> {
   if (await checkRiskEngine(accountsPath)) return true;
-  console.error(`[RISK LOCK] Account ${accountId} violated. Skipping account and rotating entry queue.`);
+  console.error(`[RISK LOCK] Account ${accountId} violated. Excluding account from entry queue.`);
   return false;
 }
+
+async function isAccountLocked(account: TradingAccount): Promise<boolean> {
+  try {
+    return (await readAccounts(accountStatePath(account.accountId))).locked === true;
+  } catch {
+    return false;
+  }
+}
+
+async function activeAccounts(accounts: TradingAccount[]): Promise<TradingAccount[]> {
+  const states = await Promise.all(accounts.map(async (account) => ({ account, locked: await isAccountLocked(account) })));
+  return states.filter(({ locked }) => !locked).map(({ account }) => account);
+}
+
+let allAccountsLockedLogged = false;
 
 async function runAccount(
   client: ProprClient,
@@ -253,11 +268,20 @@ async function runAllAccounts(createClient: ClientFactory): Promise<void> {
   if (isExecuting) return;
   isExecuting = true;
   try {
-    const accounts = await loadTradingAccounts();
-    if (accounts.length === 0) {
+    const configuredAccounts = await loadTradingAccounts();
+    if (configuredAccounts.length === 0) {
       console.warn("[QUEUE] No local trading accounts configured; skipping cycle");
       return;
     }
+    const accounts = await activeAccounts(configuredAccounts);
+    if (accounts.length === 0) {
+      if (!allAccountsLockedLogged) {
+        console.warn("[QUEUE] All local trading accounts are risk-locked; pipeline paused");
+        allAccountsLockedLogged = true;
+      }
+      return;
+    }
+    allAccountsLockedLogged = false;
     const candles = await fetchHyperliquidCandles(config.hyperliquidSymbol, config.candleInterval, CANDLE_LIMIT);
     const queue = await readQueueState(accounts.length);
     const selectedIndex = queue.nextAccountIndex;

@@ -9,6 +9,10 @@ import { calculateEMA, evaluateEmaCrossover } from "./oscillator.js";
 import { priceForShortPnl } from "./one-shot-test.js";
 import { toHyperliquidCoin } from "./adapters/hyperliquid-market-data.js";
 import { ENTRY_COOLDOWN_MS, entryCooldownRemaining } from "./pipeline.js";
+import { validateAccount } from "./accounts.js";
+
+assert.equal(validateAccount({ initial_balance: 100, balance: 100, equity: 100, max_daily_loss: 100, locked: true }).locked, true);
+assert.equal(validateAccount({ initial_balance: 100, balance: 100, equity: 100, max_daily_loss: 100, locked: false }).locked, false);
 
 assert.equal(entryCooldownRemaining(undefined), 0);
 assert.equal(entryCooldownRemaining(Date.now() - ENTRY_COOLDOWN_MS + 1_000, Date.now()), 1_000);
