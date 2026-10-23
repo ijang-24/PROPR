@@ -8,12 +8,15 @@ function positiveInt(name: string, fallback: number): number {
 
 export const config = {
   accountsPath: new URL("../accounts.json", import.meta.url),
+  tradingAccountsPath: new URL("../trading-accounts.json", import.meta.url),
   apiUrl: process.env.PROPR_API_URL ?? "https://api.propr.xyz/v1",
   accountIds: [...new Set((process.env.PROPR_ACCOUNT_IDS ?? process.env.PROPR_ACCOUNT_ID ?? "")
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean))],
   symbol: process.env.PROPR_SYMBOL ?? process.env.SYMBOL ?? "XYZ100-USDC",
+  hyperliquidSymbol: process.env.HYPERLIQUID_SYMBOL ?? "xyz:XYZ100",
+  e8Symbol: process.env.E8_SYMBOL ?? "XYZ100",
   candleInterval: process.env.CANDLE_INTERVAL ?? "1m",
   loopMs: positiveInt("LOOP_MS", 1_000),
   maxDailyLoss: 100, // Maximum daily loss; warning threshold is 50

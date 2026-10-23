@@ -23,7 +23,7 @@ interface HyperliquidCandle {
 export function toHyperliquidCoin(symbol: string): string {
   const value = symbol.trim();
   if (!value || value.includes("/")) throw new Error(`Invalid market symbol: ${symbol}`);
-  if (value.toUpperCase() === "XYZ100-USDC") return "xyz:XYZ100";
+  if (["XYZ100", "XYZ100-USDC"].includes(value.toUpperCase())) return "xyz:XYZ100";
 
   const [base, quote] = value.split("-");
   if (!base) throw new Error(`Invalid market symbol: ${symbol}`);
@@ -51,7 +51,7 @@ export async function fetchHyperliquidCandles(
 ): Promise<Candle[]> {
   const intervalMs = INTERVAL_MS[interval];
   if (!intervalMs) throw new Error(`Hyperliquid candle interval unsupported: ${interval}; use 1m or higher`);
-  if (!Number.isInteger(limit) || limit < 15) throw new Error("At least 15 candles are required for RSI");
+  if (!Number.isInteger(limit) || limit < 21) throw new Error("At least 21 candles are required for EMA 21");
 
   const endTime = Date.now();
   const response = await fetch(INFO_URL, {
@@ -76,6 +76,6 @@ export async function fetchHyperliquidCandles(
     .map((value) => value && typeof value === "object" ? parseCandle(value as HyperliquidCandle) : null)
     .filter((candle): candle is Candle => candle !== null)
     .sort((left, right) => left.timestamp - right.timestamp);
-  if (candles.length < 15) throw new Error(`Hyperliquid returned only ${candles.length} candles`);
+  if (candles.length < 21) throw new Error(`Hyperliquid returned only ${candles.length} candles`);
   return candles.slice(-limit);
 }

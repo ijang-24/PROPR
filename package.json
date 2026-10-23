@@ -3,19 +3,32 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx src/main.ts",
+    "dev": "node scripts/dev.mjs",
+    "pipeline:dev": "tsx src/main.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/main.js",
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "tsx src/self-check.ts",
-    "test:one-shot": "tsx src/one-shot-test.ts"
+    "test:one-shot": "tsx src/one-shot-test.ts",
+    "dashboard:dev": "next dev",
+    "dashboard:build": "next build",
+    "dashboard:start": "next start"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
+    "next": "^14.2.35",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "sweetalert2": "^11.26.25",
     "ulid": "^2.3.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }

@@ -61,6 +61,9 @@ export interface ApiDashboardPayload {
     initial_balance?: unknown;
     balance?: unknown;
     equity?: unknown;
+    accountProduct?: unknown;
+    instrumentClass?: unknown;
+    metadataStatus?: unknown;
   } | null;
   challenge?: {
     challengeId?: unknown;
