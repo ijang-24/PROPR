@@ -1,40 +1,29 @@
-import type { Classification } from "./types.js";
+import type { Classification, Position } from "./types.js";
 
-export interface OscillatorDecision {
-  classification: Classification;
+/** Returns the latest standard EMA seeded with the first-period SMA. */
+export function calculateEMA(prices: number[], period: number): number {
+  if (!Number.isInteger(period) || period <= 0) throw new Error("EMA period must be a positive integer");
+  if (prices.length < period) throw new Error(`EMA requires at least ${period} prices`);
+  if (!prices.every(Number.isFinite)) throw new Error("EMA prices must be finite numbers");
+
+  let ema = prices.slice(0, period).reduce((sum, price) => sum + price, 0) / period;
+  const multiplier = 2 / (period + 1);
+  for (let index = period; index < prices.length; index += 1) {
+    ema = ((prices[index]! - ema) * multiplier) + ema;
+  }
+  return ema;
 }
 
-/** Returns the latest Wilder-smoothed RSI for the supplied closing prices. */
-export function calculateRSI(closes: number[], period = 14): number {
-  if (!Number.isInteger(period) || period <= 0) throw new Error("RSI period must be a positive integer");
-  if (closes.length < period + 1) throw new Error(`RSI requires at least ${period + 1} closes`);
-  if (!closes.every(Number.isFinite)) throw new Error("RSI closes must be finite numbers");
-
-  let gainSum = 0;
-  let lossSum = 0;
-  for (let index = 1; index <= period; index += 1) {
-    const change = closes[index]! - closes[index - 1]!;
-    if (change >= 0) gainSum += change;
-    else lossSum -= change;
+export function evaluateEmaCrossover(
+  ema9: number,
+  ema21: number,
+  currentPosition: Position,
+): Classification {
+  if (!Number.isFinite(ema9) || !Number.isFinite(ema21)) {
+    throw new Error("EMA values must be finite numbers");
   }
-
-  let averageGain = gainSum / period;
-  let averageLoss = lossSum / period;
-  for (let index = period + 1; index < closes.length; index += 1) {
-    const change = closes[index]! - closes[index - 1]!;
-    const gain = change > 0 ? change : 0;
-    const loss = change < 0 ? -change : 0;
-    averageGain = ((averageGain * (period - 1)) + gain) / period;
-    averageLoss = ((averageLoss * (period - 1)) + loss) / period;
-  }
-
-  if (averageLoss === 0) return averageGain === 0 ? 50 : 100;
-  return 100 - (100 / (1 + (averageGain / averageLoss)));
-}
-
-export function evaluateOscillatorState(currentRsi: number): OscillatorDecision {
-  if (!Number.isFinite(currentRsi)) throw new Error("RSI must be a finite number");
-  if (currentRsi >= 80) return { classification: "DOWN" };
-  if (currentRsi <= 15) return { classification: "UP" };
-  return { classification: "HOLD" };
+  if (ema9 === ema21) return "HOLD";
+  if (currentPosition === "NONE") return ema9 > ema21 ? "UP" : "DOWN";
+  if (currentPosition === "LONG") return ema9 < ema21 ? "CLOSE" : "HOLD";
+  return ema9 > ema21 ? "CLOSE" : "HOLD";
 }

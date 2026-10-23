@@ -1,4 +1,4 @@
-import { readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rmdir, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AccountState, AccountSnapshot } from "./types.js";
@@ -19,19 +19,86 @@ export async function readAccounts(path: URL): Promise<AccountState> {
   return validateAccount(JSON.parse(await readFile(path, "utf8")));
 }
 
-export async function writeAccountSnapshot(path: URL, snapshot: AccountSnapshot): Promise<void> {
-  const current = await readAccounts(path);
-  const next: AccountState = { ...current, ...snapshot, updated_at: new Date().toISOString() };
+async function withAccountLock<T>(path: URL, operation: () => Promise<T>): Promise<T> {
   const target = fileURLToPath(path);
-  const tmp = join(dirname(target), `.${basename(target)}.${process.pid}.tmp`);
+  const lockPath = `${target}.lock`;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    try {
+      await mkdir(lockPath);
+      try {
+        return await operation();
+      } finally {
+        await rmdir(lockPath).catch(() => undefined);
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+  throw new Error(`Timed out waiting for account state lock: ${target}`);
+}
+
+async function replaceWithRetry(tmp: string, target: string): Promise<void> {
+
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      await rename(tmp, target);
+      return;
+    } catch (error) {
+      lastError = error;
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "EPERM" && code !== "EACCES") throw error;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+
+  try {
+    await writeFile(target, await readFile(tmp, "utf8"), { encoding: "utf8", mode: 0o600 });
+    await unlink(tmp).catch(() => undefined);
+  } catch {
+    throw lastError;
+  }
+}
+
+async function writeAccountState(path: URL, next: AccountState): Promise<void> {
+  const target = fileURLToPath(path);
+  const tmp = join(dirname(target), `.${basename(target)}.${process.pid}.${Date.now()}.tmp`);
   await writeFile(tmp, `${JSON.stringify(next, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-  await rename(tmp, target);
+  await replaceWithRetry(tmp, target);
+}
+
+export async function writeAccountSnapshot(path: URL, snapshot: AccountSnapshot): Promise<void> {
+  await withAccountLock(path, async () => {
+    const current = await readAccounts(path);
+    await writeAccountState(path, { ...current, ...snapshot, updated_at: new Date().toISOString() });
+  });
+}
+
+export async function updateAccountState(path: URL, update: Partial<AccountState>): Promise<AccountState> {
+  return withAccountLock(path, async () => {
+    const current = await readAccounts(path);
+    const next = { ...current, ...update, updated_at: new Date().toISOString() };
+    await writeAccountState(path, next);
+    return next;
+  });
 }
 
 export async function lockAccount(path: URL): Promise<void> {
-  const current = await readAccounts(path);
-  const target = fileURLToPath(path);
-  const tmp = join(dirname(target), `.${basename(target)}.${process.pid}.tmp`);
-  await writeFile(tmp, `${JSON.stringify({ ...current, locked: true, updated_at: new Date().toISOString() }, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-  await rename(tmp, target);
+  await updateAccountState(path, { locked: true });
 }
+
+export async function unlockAccount(path: URL): Promise<void> {
+  await updateAccountState(path, { locked: false });
+}
+
+export async function setAccountType(path: URL, accountType: "funded" | "challenge"): Promise<AccountState> {
+  return updateAccountState(path, { accountType });
+}
+
+export function accountFilePath(accountId: string, directory: string): string {
+  return join(directory, `${accountId.replace(/[^a-zA-Z0-9_-]/g, "_")}.json`);
+}
+
+export { validateAccount };
+

@@ -1,9 +1,9 @@
 export const EVALUATION_RULES = {
   initialBalance: 5_000,
-  warningDrop: 100,
-  maxDailyDrawdown: 150,
-  warningEquity: 4_900,
-  violationEquity: 4_850,
+  warningDrop: 50,
+  maxDailyDrawdown: 100,
+  warningEquity: 4_950,
+  violationEquity: 4_900,
 } as const;
 
 export type AccountMachineState = "Created" | "Active" | "Violated" | "Passed";
@@ -61,6 +61,9 @@ export interface ApiDashboardPayload {
     initial_balance?: unknown;
     balance?: unknown;
     equity?: unknown;
+    accountProduct?: unknown;
+    instrumentClass?: unknown;
+    metadataStatus?: unknown;
   } | null;
   challenge?: {
     challengeId?: unknown;

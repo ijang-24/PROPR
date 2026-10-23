@@ -25,8 +25,8 @@ export const scenarioB: ApiDashboardPayload = {
     accountId: "acct_demo_001",
     status: "Active",
     initialBalance: 5000,
-    balance: 4902,
-    equity: 4900,
+    balance: 4952,
+    equity: 4950,
   },
   challenge: {
     challengeId: "challenge_demo_001",
