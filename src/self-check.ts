@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { checkRiskEngine } from "./risk-engine.js";
 import { scenarioA, scenarioB, scenarioC, scenarioD503 } from "./mock-payloads.js";
 import { mapApiStateToUI } from "./ui-state.js";
-import { calculateEMA, calculateSupportResistance, evaluateEmaCrossover, strategyTargetPosition } from "./oscillator.js";
+import { calculateEMA, evaluateEmaCrossover } from "./oscillator.js";
 import { priceForShortPnl } from "./one-shot-test.js";
 import { toHyperliquidCoin } from "./adapters/hyperliquid-market-data.js";
 import { ENTRY_COOLDOWN_MS, cooldownRemainingForTest, entryCooldownRemaining, copyTradeAccountsForTest, masterTargetPosition } from "./pipeline.js";
@@ -111,21 +111,8 @@ assert.equal(evaluateEmaCrossover(101, 100, "SHORT"), "CLOSE");
 assert.equal(evaluateEmaCrossover(99, 100, "SHORT"), "HOLD");
 assert.equal(evaluateEmaCrossover(100, 100, "NONE"), "HOLD");
 
-const strategyCandles = Array.from({ length: 40 }, (_, index) => ({
-  timestamp: index,
-  open: index < 20 ? 110 : 100,
-  high: index < 20 ? 112 : 102,
-  low: index < 20 ? 108 : 98,
-  close: index < 20 ? 110 : 100,
-}));
-strategyCandles[38] = { timestamp: 38, open: 100, high: 101, low: 99, close: 99.5 };
-strategyCandles[39] = { timestamp: 39, open: 99.5, high: 100, low: 98.8, close: 99.2 };
-const levels = calculateSupportResistance(strategyCandles);
-assert.ok(levels.support > 0);
-assert.ok(levels.resistance > levels.support);
-assert.equal(strategyTargetPosition(levels.support + 0.1, levels.support, "NONE", strategyCandles), "LONG");
-assert.equal(strategyTargetPosition(levels.support, levels.support + 0.1, "NONE", strategyCandles), "NONE");
-assert.throws(() => calculateSupportResistance(strategyCandles.slice(0, 10)), /requires more completed candles/);
+assert.equal(toHyperliquidCoin("GOLD"), "xyz:GOLD");
+assert.throws(() => toHyperliquidCoin("USDJPY"), /Unverified/);
 
 const happy = mapApiStateToUI(scenarioA);
 assert.equal(happy.account.state, "Active");

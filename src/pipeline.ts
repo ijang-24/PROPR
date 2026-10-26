@@ -8,7 +8,7 @@ import { config } from "./config.js";
 import { fetchHyperliquidCandles } from "./adapters/hyperliquid-market-data.js";
 import { createPlatformClient } from "./adapters/platform-client.js";
 import { checkRiskEngine } from "./risk-engine.js";
-import { calculateEMA, strategyTargetPosition } from "./oscillator.js";
+import { calculateEMA, evaluateEmaCrossover } from "./oscillator.js";
 import {
   cooldownRemaining,
   cooldownUntilRemaining,
@@ -319,13 +319,14 @@ async function runAllAccounts(createClient: ClientFactory): Promise<void> {
     await masterClient.setup(master.accountId);
     const masterPosition = activePosition(await masterClient.getPositions(executionSymbol(master)));
     const currentMaster = positionState(masterPosition);
-    const completedCandles = candles.slice(0, -1);
+    const completedCandles = candles;
     if (completedCandles.length < 21) throw new Error("No completed candle set available for strategy");
     const signalPrice = completedCandles.at(-1)?.close;
     if (!signalPrice || !Number.isFinite(signalPrice) || signalPrice <= 0) throw new Error("No valid completed signal candle");
     const ema9 = calculateEMA(completedCandles.map((candle) => candle.close), 9);
     const ema21 = calculateEMA(completedCandles.map((candle) => candle.close), 21);
-    const target = strategyTargetPosition(ema9, ema21, currentMaster, completedCandles);
+    const classification = evaluateEmaCrossover(ema9, ema21, currentMaster);
+    const target = classification === "UP" ? "LONG" : classification === "DOWN" ? "SHORT" : classification === "CLOSE" ? "NONE" : currentMaster;
     const masterState = await readAccounts(await ensureAccountState(master.accountId, executionSymbol(master)));
     const cooldownMs = cooldownUntilRemaining(masterState.cooldownUntil);
     if (cooldownMs > 0) console.log(`[COPY] Post-close cooldown: ${Math.ceil(cooldownMs / 1000)}s remaining`);

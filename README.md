@@ -1,6 +1,6 @@
 # Propr market pipeline
 
-Pipeline modular untuk membaca candle, menghitung EMA9/EMA21 dengan konfirmasi support/resistance, menjalankan risk lock, dan mengirim protected trade melalui adapter Propr.
+Pipeline modular untuk membaca candle, menghitung EMA9/EMA21, menjalankan risk lock, dan mengirim protected trade melalui adapter Propr.
 
 Mode default `DRY_RUN=true`. Set ke `false` hanya setelah adapter SDK resmi diisi dan diuji pada sandbox/testnet.
 
