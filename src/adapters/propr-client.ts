@@ -15,8 +15,21 @@ import type {
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
-interface ChallengeAttempt {
-  accountId?: unknown;
+export function normalizeProprBaseUrl(value: string | undefined): string {
+  const raw = (value ?? "https://api.propr.xyz/v1").trim();
+  if (!raw) throw new Error("PROPR_API_URL must not be empty");
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error("PROPR_API_URL must be an absolute URL");
+  }
+  if (url.protocol !== "https:") throw new Error("PROPR_API_URL must use HTTPS");
+  url.search = "";
+  url.hash = "";
+  const pathname = url.pathname.replace(/\/+$/, "");
+  url.pathname = pathname === "" ? "/v1" : pathname === "/v1" ? "/v1" : pathname.endsWith("/v1") ? pathname : `${pathname}/v1`;
+  return url.toString().replace(/\/$/, "");
 }
 
 interface AccountResponse {
@@ -59,14 +72,14 @@ export class OfficialProprClient implements ProprClient {
   constructor(
     private readonly dryRun = true,
     private readonly apiKey = process.env.PROPR_API_KEY,
-    private readonly baseUrl = process.env.PROPR_API_URL ?? "https://api.propr.xyz/v1",
+    private readonly baseUrl = normalizeProprBaseUrl(process.env.PROPR_API_URL),
     private readonly timeoutMs = DEFAULT_TIMEOUT_MS,
   ) {
     if (!apiKey) throw new Error("PROPR_API_KEY is required");
   }
 
   private async request<T>(method: string, path: string, body?: unknown, params?: Record<string, string>): Promise<T> {
-    const url = new URL(`${this.baseUrl}${path}`);
+    const url = new URL(path.replace(/^\/+/, ""), `${this.baseUrl}/`);
     for (const [key, value] of Object.entries(params ?? {})) url.searchParams.set(key, value);
 
     const controller = new AbortController();
@@ -108,24 +121,15 @@ export class OfficialProprClient implements ProprClient {
   }
 
   async setup(accountId = process.env.PROPR_ACCOUNT_ID): Promise<string> {
-    if (accountId) {
-      this.accountId = accountId;
-      return accountId;
-    }
-    const response = await this.request<{ data?: ChallengeAttempt[] }>("GET", "/challenge-attempts", undefined, {
-      status: "active",
-      limit: "20",
-      offset: "0",
-    });
-    const discovered = response.data?.find((attempt) => typeof attempt.accountId === "string")?.accountId;
-    if (typeof discovered !== "string") throw new Error("No active Propr challenge account found");
-    this.accountId = discovered;
-    return discovered;
+    if (!accountId?.trim()) throw new Error("Explicit Propr account ID is required");
+    if (!/^urn:prp-account:[A-Za-z0-9_-]+$/.test(accountId.trim())) throw new Error("Invalid Propr account ID format");
+    this.accountId = accountId.trim();
+    return this.accountId;
   }
 
   private accountPath(path: string): string {
     if (!this.accountId) throw new Error("Propr account is not initialized; call setup() first");
-    return `/accounts/${this.accountId}${path}`;
+    return `/accounts/${encodeURIComponent(this.accountId)}${path}`;
   }
 
   async refreshAccountSnapshot(): Promise<AccountSnapshot> {

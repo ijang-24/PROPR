@@ -9,6 +9,7 @@ import { calculateEMA, evaluateEmaCrossover } from "./oscillator.js";
 import { priceForShortPnl } from "./one-shot-test.js";
 import { toHyperliquidCoin } from "./adapters/hyperliquid-market-data.js";
 import { ENTRY_COOLDOWN_MS, cooldownRemainingForTest, entryCooldownRemaining, copyTradeAccountsForTest, masterTargetPosition } from "./pipeline.js";
+import { normalizeProprBaseUrl } from "./adapters/propr-client.js";
 import { planPositionTransition, PROPR_COOLDOWN_MS } from "./types.js";
 
 assert.equal(entryCooldownRemaining(undefined), 0);
@@ -48,6 +49,10 @@ assert.deepEqual(copyTradeAccountsForTest([
 ]);
 
 
+assert.equal(normalizeProprBaseUrl("https://api.propr.xyz/v1"), "https://api.propr.xyz/v1");
+assert.equal(normalizeProprBaseUrl("https://api.propr.xyz/v1/"), "https://api.propr.xyz/v1");
+assert.equal(normalizeProprBaseUrl("https://api.propr.xyz"), "https://api.propr.xyz/v1");
+assert.throws(() => normalizeProprBaseUrl("http://api.propr.xyz/v1"), /HTTPS/);
 assert.equal(toHyperliquidCoin("XYZ100"), "xyz:XYZ100");
 assert.equal(toHyperliquidCoin("XYZ100-USDC"), "xyz:XYZ100");
 import { parseE8AccountMetadata, parseE8InstrumentMetadata, summarizeE8Metadata, validateE8InstrumentMetadata } from "./adapters/e8-client.js";
