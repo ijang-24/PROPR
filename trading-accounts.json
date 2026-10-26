@@ -1,12 +1,7 @@
 [
   {
-    "accountId": "urn:prp-account:gZwZ25Unjywj",
+    "accountId": "urn:prp-account:b5qzrNBn2PZ8",
     "platform": "propr",
     "role": "master"
-  },
-  {
-    "accountId": "urn:prp-account:q45JV9hmJ1h6",
-    "platform": "propr",
-    "role": "follower"
   }
 ]
