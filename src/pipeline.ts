@@ -103,9 +103,10 @@ function entryQuantity(equity: number, entryPrice: number): number {
 }
 
 function protectedPrices(side: Side, entryPrice: number, quantity: number): { takeProfitPrice: number; stopLossPrice: number } {
-  const targetDistance = config.targetPnl / quantity;
-  const takeProfitPrice = side === "long" ? entryPrice + targetDistance : entryPrice - targetDistance;
-  const stopLossPrice = side === "long" ? entryPrice - targetDistance : entryPrice + targetDistance;
+  const takeProfitDistance = config.targetPnl / quantity;
+  const stopLossDistance = config.stopPnl / quantity;
+  const takeProfitPrice = side === "long" ? entryPrice + takeProfitDistance : entryPrice - takeProfitDistance;
+  const stopLossPrice = side === "long" ? entryPrice - stopLossDistance : entryPrice + stopLossDistance;
   if (takeProfitPrice <= 0 || stopLossPrice <= 0) throw new Error("Calculated TP/SL price is invalid");
   return { takeProfitPrice, stopLossPrice };
 }
