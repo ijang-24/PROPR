@@ -105,7 +105,7 @@ Take profit dan stop loss dikonfigurasi terpisah:
 - `TARGET_PNL`: target nominal profit yang digunakan untuk menghitung jarak TP.
 - `STOP_PNL`: batas nominal loss yang digunakan untuk menghitung jarak SL.
 
-Nilai rahasia dari file `.env` tidak dicantumkan dalam dokumen ini. Untuk konfigurasi yang disetujui, TARGET_PNL dapat ditetapkan USD 75 dan STOP_PNL USD 50; nilai aktual harus diverifikasi oleh operator pada environment yang akan digunakan.
+Nilai rahasia dari file `.env` tidak dicantumkan dalam dokumen ini. Untuk konfigurasi yang disetujui, TARGET_PNL ditetapkan USD 50 dan STOP_PNL USD 50; nilai aktual harus diverifikasi oleh operator pada environment yang akan digunakan.
 
 ### Rumus konseptual
 
