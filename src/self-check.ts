@@ -5,14 +5,47 @@ import { join } from "node:path";
 import { checkRiskEngine } from "./risk-engine.js";
 import { scenarioA, scenarioB, scenarioC, scenarioD503 } from "./mock-payloads.js";
 import { mapApiStateToUI } from "./ui-state.js";
-import { calculateEMA, evaluateEmaCrossover } from "./oscillator.js";
+import { calculateEMA, calculateSupportResistance, evaluateEmaCrossover, strategyTargetPosition } from "./oscillator.js";
 import { priceForShortPnl } from "./one-shot-test.js";
 import { toHyperliquidCoin } from "./adapters/hyperliquid-market-data.js";
-import { ENTRY_COOLDOWN_MS, entryCooldownRemaining } from "./pipeline.js";
+import { ENTRY_COOLDOWN_MS, cooldownRemainingForTest, entryCooldownRemaining, copyTradeAccountsForTest, masterTargetPosition } from "./pipeline.js";
+import { planPositionTransition, PROPR_COOLDOWN_MS } from "./types.js";
 
 assert.equal(entryCooldownRemaining(undefined), 0);
 assert.equal(entryCooldownRemaining(Date.now() - ENTRY_COOLDOWN_MS + 1_000, Date.now()), 1_000);
 assert.equal(entryCooldownRemaining(Date.now() - ENTRY_COOLDOWN_MS - 1, Date.now()), 0);
+assert.deepEqual(copyTradeAccountsForTest([
+  { accountId: "propr-a", platform: "propr", role: "master" },
+  { accountId: "e8-a", platform: "e8", role: "follower" },
+  { accountId: "propr-b", platform: "propr", role: "follower" },
+]), [
+  { accountId: "propr-a", platform: "propr", role: "master" },
+  { accountId: "propr-b", platform: "propr", role: "follower" },
+]);
+assert.equal(masterTargetPosition(101, 100, "NONE"), "LONG");
+assert.equal(masterTargetPosition(99, 100, "NONE"), "SHORT");
+assert.deepEqual(planPositionTransition("LONG", "LONG"), []);
+assert.deepEqual(planPositionTransition("SHORT", "LONG"), [
+  { kind: "close", side: "long" },
+  { kind: "open", side: "short" },
+]);
+assert.deepEqual(planPositionTransition("LONG", "SHORT"), [
+  { kind: "close", side: "short" },
+  { kind: "open", side: "long" },
+]);
+assert.equal(cooldownRemainingForTest(Date.now() - PROPR_COOLDOWN_MS + 1_000, Date.now()), 1_000);
+assert.equal(cooldownRemainingForTest(Date.now() - PROPR_COOLDOWN_MS - 1, Date.now()), 0);
+assert.equal(masterTargetPosition(100, 100, "LONG"), "LONG");
+assert.equal(masterTargetPosition(100, 100, "SHORT"), "SHORT");
+
+assert.deepEqual(copyTradeAccountsForTest([
+  { accountId: "propr-a", platform: "propr", role: "master" },
+  { accountId: "e8-a", platform: "e8", role: "follower" },
+  { accountId: "propr-b", platform: "propr", role: "follower" },
+]), [
+  { accountId: "propr-a", platform: "propr", role: "master" },
+  { accountId: "propr-b", platform: "propr", role: "follower" },
+]);
 
 
 assert.equal(toHyperliquidCoin("XYZ100"), "xyz:XYZ100");
@@ -77,6 +110,22 @@ assert.equal(evaluateEmaCrossover(101, 100, "LONG"), "HOLD");
 assert.equal(evaluateEmaCrossover(101, 100, "SHORT"), "CLOSE");
 assert.equal(evaluateEmaCrossover(99, 100, "SHORT"), "HOLD");
 assert.equal(evaluateEmaCrossover(100, 100, "NONE"), "HOLD");
+
+const strategyCandles = Array.from({ length: 40 }, (_, index) => ({
+  timestamp: index,
+  open: index < 20 ? 110 : 100,
+  high: index < 20 ? 112 : 102,
+  low: index < 20 ? 108 : 98,
+  close: index < 20 ? 110 : 100,
+}));
+strategyCandles[38] = { timestamp: 38, open: 100, high: 101, low: 99, close: 99.5 };
+strategyCandles[39] = { timestamp: 39, open: 99.5, high: 100, low: 98.8, close: 99.2 };
+const levels = calculateSupportResistance(strategyCandles);
+assert.ok(levels.support > 0);
+assert.ok(levels.resistance > levels.support);
+assert.equal(strategyTargetPosition(levels.support + 0.1, levels.support, "NONE", strategyCandles), "LONG");
+assert.equal(strategyTargetPosition(levels.support, levels.support + 0.1, "NONE", strategyCandles), "NONE");
+assert.throws(() => calculateSupportResistance(strategyCandles.slice(0, 10)), /requires more completed candles/);
 
 const happy = mapApiStateToUI(scenarioA);
 assert.equal(happy.account.state, "Active");

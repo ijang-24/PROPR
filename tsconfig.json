@@ -16,6 +16,7 @@
       "esnext"
     ],
     "allowJs": true,
+    "allowImportingTsExtensions": true,
     "noEmit": true,
     "incremental": true,
     "resolveJsonModule": true,

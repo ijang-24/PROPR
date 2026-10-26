@@ -30,6 +30,18 @@ type AccountType = "funded" | "challenge" | "unassigned";
 type PlatformFilter = "all" | "propr" | "e8";
 type TypeFilter = "all" | AccountType;
 type Trade = { id: string; side: string; quantity: number; price: number; pnl: number; timestamp: string };
+type MarketInsight = {
+  label: string;
+  symbol: string;
+  source: "Hyperliquid" | "none";
+  status: "ready" | "stale" | "unsupported" | "error";
+  close?: number;
+  previousClose?: number;
+  changePct?: number;
+  asOf?: number;
+  reason?: string;
+};
+
 type Account = {
   accountId: string;
   platform: string;
@@ -78,7 +90,9 @@ function tradeDate(value: string): string {
 
 export default function DashboardPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [marketInsights, setMarketInsights] = useState<MarketInsight[]>([]);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  const [marketUpdatedAt, setMarketUpdatedAt] = useState<number | null>(null);
   const [platformFilter, setPlatformFilter] = useState<PlatformFilter>("all");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [settingType, setSettingType] = useState<string | null>(null);
@@ -136,6 +150,30 @@ export default function DashboardPage() {
       showError(reasonMessage(reason, "Account state unavailable"));
     }
   }, [clearError, showError]);
+
+  const loadMarketInsights = useCallback(async () => {
+    try {
+      const response = await fetch("/api/market-insight", { cache: "no-store" });
+      if (!response.ok) throw new Error("Market insight unavailable");
+      const payload = await response.json() as { insights?: MarketInsight[]; updatedAt?: number };
+      setMarketInsights(payload.insights ?? []);
+      setMarketUpdatedAt(payload.updatedAt ?? null);
+    } catch (reason) {
+      showError(reasonMessage(reason, "Market insight unavailable"));
+    }
+  }, [showError]);
+
+  function insightValue(insight: MarketInsight): string {
+    if (insight.close === undefined) return insight.reason ?? "Unavailable";
+    return `${insight.close.toLocaleString(undefined, { maximumFractionDigits: 4 })} · ${insight.changePct !== undefined ? `${insight.changePct >= 0 ? "+" : ""}${insight.changePct.toFixed(2)}%` : "—"}`;
+  }
+
+  function insightStatus(insight: MarketInsight): string {
+    if (insight.status === "ready") return "Ready · 1m snapshot";
+    if (insight.status === "stale") return "Stale · 1m snapshot";
+    if (insight.status === "unsupported") return "No verified feed";
+    return "Feed error";
+  }
 
   const visibleAccounts = accounts.filter((account) =>
     (platformFilter === "all" || account.platform === platformFilter)
@@ -214,9 +252,14 @@ export default function DashboardPage() {
 
   useEffect(() => {
     void loadAccounts();
+    void loadMarketInsights();
     const timer = window.setInterval(() => void loadAccounts(), 3_000);
-    return () => window.clearInterval(timer);
-  }, [loadAccounts]);
+    const marketTimer = window.setInterval(() => void loadMarketInsights(), 30_000);
+    return () => {
+      window.clearInterval(timer);
+      window.clearInterval(marketTimer);
+    };
+  }, [loadAccounts, loadMarketInsights]);
 
   useEffect(() => {
     return () => Swal.close();
@@ -225,14 +268,31 @@ export default function DashboardPage() {
   return (
     <main className="min-h-screen bg-slate-950 px-6 py-10 text-slate-100 sm:px-10">
       <div className="mx-auto max-w-7xl">
-        <header className="mb-10 flex flex-col justify-between gap-4 border-b border-slate-800 pb-6 sm:flex-row sm:items-end">
+        <header className="mb-8 flex flex-col justify-between gap-4 border-b border-slate-800 pb-6 sm:flex-row sm:items-end">
           <div>
             <p className="mb-2 text-xs font-semibold uppercase tracking-[0.3em] text-cyan-400">Layer C / Monitor</p>
             <h1 className="text-3xl font-semibold tracking-tight text-white">Account Dashboard</h1>
-            <p className="mt-2 text-sm text-slate-400">Local account state · refreshes every 3 seconds</p>
+            <p className="mt-2 text-sm text-slate-400">Local account state · market snapshots refresh every 30 seconds</p>
           </div>
           <p className="text-xs text-slate-500">{updatedAt ? `Last sync ${new Date(updatedAt).toLocaleTimeString()}` : "Waiting for state"}</p>
         </header>
+
+        <section aria-labelledby="market-insight-title" className="mb-10 overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/70 p-3">
+          <h2 id="market-insight-title" className="sr-only">Market insight snapshots</h2>
+          <div className="flex min-w-max gap-3">
+            {marketInsights.map((insight) => {
+              const positive = (insight.changePct ?? 0) >= 0;
+              const tone = insight.status === "ready" ? (positive ? "border-emerald-400/30" : "border-red-400/30") : "border-slate-700";
+              return <div key={insight.label} className={`min-w-44 rounded-xl border ${tone} bg-slate-950/70 px-4 py-3`}>
+                <div className="flex items-center justify-between gap-3"><span className="text-xs font-bold tracking-wider text-slate-200">{insight.label}</span><span className="text-xs uppercase tracking-wider text-slate-400">{insight.source}</span></div>
+                <p className={`mt-2 text-sm font-semibold ${insight.status === "ready" ? (positive ? "text-emerald-300" : "text-red-300") : "text-slate-400"}`}>{insightValue(insight)}</p>
+                <p className="mt-1 text-xs uppercase tracking-wide text-slate-300">{insightStatus(insight)}</p>
+                {insight.asOf && <p className="mt-1 text-xs text-slate-400">{new Date(insight.asOf).toLocaleTimeString()}</p>}
+              </div>;
+            })}
+          </div>
+          <p className="mt-3 text-xs text-slate-400">{marketUpdatedAt ? `Market response ${new Date(marketUpdatedAt).toLocaleTimeString()}` : "Market feed pending"}. Values are candle closes, not live ticks.</p>
+        </section>
 
         {accounts.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-800 px-6 py-16 text-center text-sm text-slate-500">No account state files found.</div>

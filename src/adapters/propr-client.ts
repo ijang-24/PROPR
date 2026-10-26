@@ -5,9 +5,11 @@ import type {
   Candle,
   OneShotOrderResult,
   OneShotShortRequest,
-  ProtectedTradeRequest,
   ProprClient,
+  ProprOrder,
+  ProprOrderResponse,
   ProprPosition,
+  ProtectedTradeRequest,
   TradeRequest,
 } from "../types.js";
 
@@ -21,21 +23,6 @@ interface AccountResponse {
   balance?: unknown;
   totalUnrealizedPnl?: unknown;
   isolatedPositionMargin?: unknown;
-}
-
-interface ProprOrder {
-  orderId?: string;
-  intentId?: string;
-  positionId?: string | null;
-  status?: string;
-  type?: string;
-  asset?: string;
-  base?: string;
-  quantity?: string;
-}
-
-interface OrderResponse {
-  data?: ProprOrder[];
 }
 
 interface MarginConfigResponse {
@@ -156,21 +143,42 @@ export class OfficialProprClient implements ProprClient {
     const params: Record<string, string> = { limit: "100", offset: "0" };
     if (symbol) params.asset = proprAsset(symbol).asset;
     const response = await this.request<PositionsResponse>("GET", this.accountPath("/positions"), undefined, params);
-    return (response.data ?? []).filter((position) => Number(position.quantity) > 0);
+    return (response.data ?? []).filter((position) => (position.status ?? "open") === "open" && Number(position.quantity) > 0);
+  }
+
+  async listOrders(symbol: string): Promise<ProprOrder[]> {
+    const { base } = proprAsset(symbol);
+    const orders: ProprOrder[] = [];
+    for (const status of ["pending", "open", "partially_filled"]) {
+      const response = await this.request<ProprOrderResponse>("GET", this.accountPath("/orders"), undefined, {
+        base,
+        status,
+        limit: "100",
+        offset: "0",
+      });
+      orders.push(...(response.data ?? []));
+    }
+    return orders;
   }
 
   async hasPendingOrders(symbol: string): Promise<boolean> {
-    const { base } = proprAsset(symbol);
-    for (const status of ["pending", "open"]) {
-      const response = await this.request<OrderResponse>("GET", this.accountPath("/orders"), undefined, {
-        base,
-        status,
-        limit: "20",
-        offset: "0",
-      });
-      if ((response.data?.length ?? 0) > 0) return true;
+    return (await this.listOrders(symbol)).length > 0;
+  }
+
+  async cancelOrder(orderId: string): Promise<void> {
+    if (!orderId.trim()) throw new Error("Propr order ID is required");
+    try {
+      await this.request("POST", this.accountPath(`/orders/${encodeURIComponent(orderId)}/cancel`));
+    } catch (error) {
+      const message = String(error instanceof Error ? error.message : error);
+      if (!message.includes("Propr API 400") || !message.includes("13053")) throw error;
     }
-    return false;
+  }
+
+  async cancelOpenOrders(symbol: string): Promise<void> {
+    for (const order of await this.listOrders(symbol)) {
+      if (order.orderId) await this.cancelOrder(order.orderId);
+    }
   }
 
   async setLeverage(symbol: string, leverage: number): Promise<void> {
@@ -214,7 +222,7 @@ export class OfficialProprClient implements ProprClient {
       reduceOnly: request.closePosition ?? false,
       closePosition: request.closePosition ?? false,
     };
-    const response = await this.request<OrderResponse>("POST", this.accountPath("/orders"), {
+    const response = await this.request<ProprOrderResponse>("POST", this.accountPath("/orders"), {
       orders: [entry],
     });
     if (!response.data?.length) throw new Error("Propr accepted no orders");
@@ -274,7 +282,7 @@ export class OfficialProprClient implements ProprClient {
         closePosition: false,
       },
     ];
-    const response = await this.request<OrderResponse>("POST", this.accountPath("/orders"), {
+    const response = await this.request<ProprOrderResponse>("POST", this.accountPath("/orders"), {
       orderGroupId: groupId,
       orders,
     });

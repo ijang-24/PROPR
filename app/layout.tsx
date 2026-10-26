@@ -5,8 +5,8 @@ import "./globals.css";
 const poppins = Poppins({ subsets: ["latin"], weight: ["400", "600"], variable: "--font-poppins" });
 
 export const metadata: Metadata = {
-  title: "Account Dashboard",
-  description: "Local Propr account state monitor",
+  title: "Trading Monitor",
+  description: "Local account risk and verified market snapshot monitor",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

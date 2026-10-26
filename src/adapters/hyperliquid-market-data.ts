@@ -13,6 +13,7 @@ const INTERVAL_MS: Record<string, number> = {
 
 interface HyperliquidCandle {
   t?: unknown;
+  T?: unknown;
   o?: unknown;
   h?: unknown;
   l?: unknown;
@@ -20,27 +21,33 @@ interface HyperliquidCandle {
   v?: unknown;
 }
 
+const VERIFIED_HIP3_BASES = new Set(["XYZ100", "GOLD"]);
+
 export function toHyperliquidCoin(symbol: string): string {
   const value = symbol.trim();
   if (!value || value.includes("/")) throw new Error(`Invalid market symbol: ${symbol}`);
-  if (["XYZ100", "XYZ100-USDC"].includes(value.toUpperCase())) return "xyz:XYZ100";
-
-  const [base, quote] = value.split("-");
-  if (!base) throw new Error(`Invalid market symbol: ${symbol}`);
-  if (quote && quote.toUpperCase() !== "USDC") throw new Error(`Unsupported market quote: ${quote}`);
-  return base.includes(":") ? base : base.toUpperCase();
+  const parts = value.split("-");
+  if (parts.length > 2) throw new Error(`Invalid market symbol: ${symbol}`);
+  const rawBase = parts[0]?.trim();
+  const quote = parts[1]?.trim();
+  if (!rawBase || (quote && quote.toUpperCase() !== "USDC")) throw new Error(`Unsupported market quote: ${quote ?? ""}`);
+  const normalized = rawBase.toUpperCase();
+  if (VERIFIED_HIP3_BASES.has(normalized)) return `xyz:${normalized}`;
+  if (/^[a-z0-9]+:[a-zA-Z0-9._-]+$/.test(rawBase)) return rawBase;
+  throw new Error(`Unverified Hyperliquid market symbol: ${symbol}`);
 }
 
 function parseCandle(value: HyperliquidCandle): Candle | null {
   const timestamp = Number(value.t);
+  const closeTimestamp = Number(value.T);
   const open = Number(value.o);
   const high = Number(value.h);
   const low = Number(value.l);
   const close = Number(value.c);
   const volume = value.v === undefined ? undefined : Number(value.v);
-  const values = [timestamp, open, high, low, close, ...(volume === undefined ? [] : [volume])];
+  const values = [timestamp, closeTimestamp, open, high, low, close, ...(volume === undefined ? [] : [volume])];
   if (!values.every(Number.isFinite)) return null;
-  return { timestamp, open, high, low, close, ...(volume === undefined ? {} : { volume }) };
+  return { timestamp: closeTimestamp, open, high, low, close, ...(volume === undefined ? {} : { volume }) };
 }
 
 export async function fetchHyperliquidCandles(
@@ -74,8 +81,8 @@ export async function fetchHyperliquidCandles(
   if (!Array.isArray(payload)) throw new Error("Hyperliquid candle response is not an array");
   const candles = payload
     .map((value) => value && typeof value === "object" ? parseCandle(value as HyperliquidCandle) : null)
-    .filter((candle): candle is Candle => candle !== null)
+    .filter((candle): candle is Candle => candle !== null && candle.timestamp <= endTime)
     .sort((left, right) => left.timestamp - right.timestamp);
-  if (candles.length < 21) throw new Error(`Hyperliquid returned only ${candles.length} candles`);
+  if (candles.length < 21) throw new Error(`Hyperliquid returned only ${candles.length} completed candles`);
   return candles.slice(-limit);
 }

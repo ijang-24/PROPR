@@ -1,4 +1,5 @@
 import { mkdir, readFile, rename, rmdir, unlink, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AccountState, AccountSnapshot } from "./types.js";
@@ -39,7 +40,6 @@ async function withAccountLock<T>(path: URL, operation: () => Promise<T>): Promi
 }
 
 async function replaceWithRetry(tmp: string, target: string): Promise<void> {
-
   let lastError: unknown;
   for (let attempt = 0; attempt < 5; attempt += 1) {
     try {
@@ -97,8 +97,9 @@ export async function setAccountType(path: URL, accountType: "funded" | "challen
 }
 
 export function accountFilePath(accountId: string, directory: string): string {
-  return join(directory, `${accountId.replace(/[^a-zA-Z0-9_-]/g, "_")}.json`);
+  const readable = accountId.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80);
+  const digest = createHash("sha256").update(accountId).digest("hex").slice(0, 12);
+  return join(directory, `${readable || "account"}-${digest}.json`);
 }
 
 export { validateAccount };
-

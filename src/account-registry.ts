@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, rmdir, unlink, writeFile } from "node:fs/promi
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { config } from "./config.js";
-import type { Platform, TradingAccount } from "./types.js";
+import type { AccountRole, Platform, TradingAccount } from "./types.js";
 
 const ACCOUNT_ID_PATTERN = /^[a-zA-Z0-9:_-]+$/;
 
@@ -11,18 +11,33 @@ function parsePlatform(value: unknown): Platform {
   throw new Error(`Unsupported account platform: ${String(value)}`);
 }
 
+function parseRole(value: unknown, source: string): AccountRole {
+  if (value === "master" || value === "follower") return value;
+  throw new Error(`${source} entries require role master or follower`);
+}
+
 function parseEntry(entry: unknown, source: string): TradingAccount {
   if (!entry || typeof entry !== "object") throw new Error(`${source} entries must be objects`);
-  const item = entry as { accountId?: unknown; platform?: unknown };
+  const item = entry as { accountId?: unknown; platform?: unknown; role?: unknown };
   if (typeof item.accountId !== "string" || !item.accountId.trim()) {
     throw new Error(`${source} entries require accountId`);
   }
-  return { accountId: item.accountId.trim(), platform: parsePlatform(item.platform) };
+  return {
+    accountId: item.accountId.trim(),
+    platform: parsePlatform(item.platform),
+    role: parseRole(item.role, source),
+  };
 }
 
 function parseRegistry(value: unknown, source: string): TradingAccount[] {
   if (!Array.isArray(value)) throw new Error(`${source} must contain an array`);
-  return value.map((entry) => parseEntry(entry, source));
+  const accounts = value.map((entry) => parseEntry(entry, source));
+  const masters = accounts.filter((account) => account.role === "master");
+  if (masters.length !== 1) throw new Error(`${source} must contain exactly one master account`);
+  if (accounts.some((account) => account.platform !== "propr")) {
+    throw new Error(`${source} copy-trading accounts must all use Propr`);
+  }
+  return accounts;
 }
 
 function validateAccountId(accountId: string): void {
@@ -79,7 +94,7 @@ export async function loadTradingAccounts(): Promise<TradingAccount[]> {
   if (fileAccounts.length > 0) return fileAccounts;
   const configured = parseConfiguredAccounts(process.env.TRADING_ACCOUNTS);
   if (configured.length > 0) return configured;
-  return config.accountIds.map((accountId) => ({ accountId, platform: "propr" }));
+  return config.accountIds.map((accountId, index) => ({ accountId, platform: "propr", role: index === 0 ? "master" : "follower" }));
 }
 
 export async function removeTradingAccount(accountId: string): Promise<void> {

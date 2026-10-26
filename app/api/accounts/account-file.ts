@@ -1,10 +1,13 @@
+import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
 export const ACCOUNTS_DIR = join(process.cwd(), "src", ".accounts");
 
 export function safeFileName(accountId: string): string {
-  return accountId.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const readable = accountId.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80);
+  const digest = createHash("sha256").update(accountId).digest("hex").slice(0, 12);
+  return `${readable || "account"}-${digest}`;
 }
 
 export async function findAccountFile(accountId: string): Promise<string | null> {
